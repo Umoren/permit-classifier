@@ -1,56 +1,60 @@
 const OpenAI = require('openai');
 require('dotenv').config();
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
-
-async function classifyRequest(userPrompt) {
-    const prompt = `
-You are a request parser. Extract these fields from the user's request:
-- resourceKey: The specific resource being requested (e.g., hilton_budapest)
-- rateType: Type of rate/access being requested (e.g., IATA, premium, public)
-- action: The intended action (usually "read")
-
-IMPORTANT: Return ONLY raw JSON with these exact keys, no markdown formatting or backticks:
-{
-    "resourceKey": "",
-    "rateType": "",
-    "action": ""
-}
-
-User request:
-${userPrompt}`;
-
-    try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a request parser. Respond with raw JSON only, no markdown formatting or explanation."
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            temperature: 0
+class AccessClassifier {
+    constructor() {
+        this.openai = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY
         });
 
-        const rawOutput = response.choices[0].message.content.trim();
-        const cleanOutput = rawOutput.replace(/```json|```/g, '').trim();
+        this.systemPrompt = `You are an access classifier that understands user requests and their intent.
+Analyze requests and identify:
+1. What type of resource they're trying to access
+2. Any relevant attributes about the resource
+3. The intended action (usually "read")
 
+Key patterns to recognize:
+- Requests about hotel rates/prices -> resourceType: "HotelType"
+  - Default to "public" rate if no specific rate type mentioned
+  - Use "unknown" as resourceKey if hotel not specified
+- Requests for financial/investment guidance -> resourceType: "FinancialAdvice"
+  - Extract specific topic (investments, retirement, etc.) as resourceKey
+- For ambiguous requests that might reference multiple services, prioritize the main intent
+
+Return JSON format:
+{
+    "resourceType": "HotelType | FinancialAdvice",
+    "resourceKey": "identifier",
+    "attributes": {
+        "rateType": "IATA | premium | public"  // for HotelType only
+    },
+    "action": "read"
+}`;
+    }
+
+    async classify(userPrompt) {
         try {
-            return JSON.parse(cleanOutput);
-        } catch (parseError) {
-            console.error("Failed to parse output:", cleanOutput);
-            throw parseError;
+            const response = await this.openai.chat.completions.create({
+                model: "gpt-4",
+                messages: [
+                    {
+                        role: "system",
+                        content: this.systemPrompt
+                    },
+                    {
+                        role: "user",
+                        content: userPrompt
+                    }
+                ],
+                temperature: 0
+            });
+
+            return JSON.parse(response.choices[0].message.content.trim());
+        } catch (error) {
+            console.error("Classification failed:", error);
+            throw error;
         }
-    } catch (err) {
-        console.error("Classification failed:", err);
-        throw err;
     }
 }
 
-module.exports = { classifyRequest };
+module.exports = AccessClassifier;

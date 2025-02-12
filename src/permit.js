@@ -10,20 +10,26 @@ async function checkAccess(userId, parsedRequest) {
     try {
         console.log('\n🔒 Checking Permission:');
         console.log(`👤 User: ${userId}`);
-        console.log(`🏨 Resource: ${parsedRequest.resourceKey}`);
-        console.log(`💰 Rate Type: ${parsedRequest.rateType}`);
+        console.log(`📑 Resource Type: ${parsedRequest.resourceType}`);
         console.log(`🎯 Action: ${parsedRequest.action}`);
+
+        let resource = {
+            type: parsedRequest.resourceType,
+            key: parsedRequest.resourceKey
+        };
+
+        // Add attributes only if they exist
+        if (Object.keys(parsedRequest.attributes || {}).length > 0) {
+            resource.attributes = parsedRequest.attributes;
+
+            // Log attributes if present
+            console.log('📋 Attributes:', parsedRequest.attributes);
+        }
 
         const permitted = await permit.check(
             userId,
             parsedRequest.action,
-            {
-                type: "HotelType",
-                key: parsedRequest.resourceKey,
-                attributes: {
-                    rateType: parsedRequest.rateType
-                }
-            }
+            resource
         );
 
         if (permitted) {
