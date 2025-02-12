@@ -1,20 +1,30 @@
 # OpenAI + Permit.io Natural Language Access Control
 
-This demo showcases how to combine OpenAI's language understanding with Permit.io's ABAC (Attribute-Based Access Control) to create a system that understands natural language requests and enforces permissions based on user attributes.
+This demo showcases building a dynamic access control system that combines OpenAI's natural language understanding with Permit.io's ABAC (Attribute-Based Access Control). The system intelligently classifies user requests and enforces permissions based on user attributes.
 
 ## Overview
 
-Users can make requests in natural language like "Show me the IATA rate for Hilton Budapest", and the system will:
-1. Use OpenAI to understand what they're trying to access
-2. Extract relevant permission attributes
-3. Check if they have the right access using Permit.io
+The system handles two types of access scenarios to demonstrate its flexibility:
+
+1. **Hotel Rate Access** (Complex attribute matching)
+   ```
+   "What's the price of Hilton Budapest?"
+   -> Classifies as public rate if not specified
+   -> Checks user attributes for special rates (IATA, premium)
+   ```
+
+2. **Financial Advice Access** (Simple opt-in validation)
+   ```
+   "Help me with my investment strategy"
+   -> Classifies as financial advice request
+   -> Checks if user has opted in for AI advice
+   ```
 
 ## Prerequisites
 
 - Node.js installed
 - OpenAI API key
 - Permit.io account and API key
-- Permit.io PDP URL
 
 ## Setup
 
@@ -31,14 +41,13 @@ PERMIT_PDP_URL=your_pdp_url
 ```
 
 3. Configure Permit.io:
-   - Create a resource type `HotelType` with attribute `rateType` (string)
+   - Create resource types:
+     - `HotelType` with `rateType` attribute
+     - `FinancialAdvice` (no attributes needed)
    - Set up user attributes:
      - `iata_membership` (boolean)
      - `premium_member` (boolean)
-   - Configure ABAC policies for:
-     - IATA rates (requires iata_membership)
-     - Premium rates (requires premium_membership)
-     - Public rates (accessible via viewer role)
+     - `ai_advice_opt_in` (boolean)
 
 ## Project Structure
 
@@ -47,110 +56,97 @@ PERMIT_PDP_URL=your_pdp_url
 ├── package.json
 ├── server.js
 └── src/
-    ├── classifier.js    # OpenAI request parsing
+    ├── classifier.js    # Generic OpenAI classifier
     └── permit.js        # Permit.io access checks
-```
-
-## Code Components
-
-### classifier.js
-Handles natural language request parsing using OpenAI:
-```javascript
-const classifyRequest = async (userPrompt) => {
-    // Returns: {
-    //    resourceKey: "hotel_name",
-    //    rateType: "IATA|premium|public",
-    //    action: "read"
-    // }
-}
-```
-
-### permit.js
-Handles permission checks using Permit.io:
-```javascript
-const checkAccess = async (userId, parsedRequest) => {
-    // Returns: boolean (allowed/denied)
-}
-```
-
-## Testing
-
-The demo includes test scenarios for:
-- IATA agent requesting IATA rates
-- Premium user requesting premium rates
-- Regular user requesting public rates
-- Access denial for unauthorized rate types
-
-Run tests:
-```bash
-node server.js
-```
-
-## Test Users
-
-1. IATA Agent:
-```javascript
-{
-    id: "iata_agent_1",
-    attributes: {
-        iata_membership: true,
-        premium_member: false
-    }
-}
-```
-
-2. Premium User:
-```javascript
-{
-    id: "premium_user_1",
-    attributes: {
-        iata_membership: false,
-        premium_member: true
-    }
-}
-```
-
-3. Regular User:
-```javascript
-{
-    id: "regular_user_1",
-    attributes: {
-        iata_membership: false,
-        premium_member: false
-    }
-}
-```
-
-## Example Output
-
-```
-🔍 Testing Scenario:
-👤 User: iata_agent_1
-💭 Request: "Give me the IATA rate for Hilton Budapest tonight"
-🤖 Classification: { 
-    resourceKey: 'hilton_budapest', 
-    rateType: 'IATA', 
-    action: 'read' 
-}
-✅ Result: ALLOWED
 ```
 
 ## How It Works
 
-1. **Natural Language Understanding**
-   - User makes a request in plain English
-   - OpenAI extracts resource, rate type, and action
-   - Returns structured permission data
+1. **Intelligent Request Classification**
+   - System understands user intent from natural language
+   - Handles explicit and implicit requests
+   - Defaults to appropriate values when details are missing
+   ```javascript
+   // Explicit: "Show me the IATA rate for Hilton"
+   {
+     resourceType: "HotelType",
+     resourceKey: "hilton",
+     attributes: { rateType: "IATA" }
+   }
 
-2. **Permission Check**
-   - System checks user attributes
-   - Matches against resource requirements
-   - Returns access decision
+   // Implicit: "What's the price of Hilton?"
+   {
+     resourceType: "HotelType",
+     resourceKey: "hilton",
+     attributes: { rateType: "public" }
+   }
+   ```
 
-3. **Access Rules**
-   - IATA rates: Requires iata_membership=true
-   - Premium rates: Requires premium_member=true
-   - Public rates: Available to all users (via viewer role)
+2. **Dynamic Permission Checks**
+   - ABAC policies based on user attributes
+   - Different validation patterns for different resources
+   ```javascript
+   // Hotel rates: Match rate type with user attributes
+   if (rateType === "IATA") requires user.iata_membership
+   if (rateType === "premium") requires user.premium_member
+
+   // Financial advice: Simple opt-in check
+   if (resourceType === "FinancialAdvice") requires user.ai_advice_opt_in
+   ```
+
+## Test Cases
+
+The system handles various scenarios:
+
+1. **Basic Access Control**
+   - IATA agent accessing IATA rates
+   - Premium user accessing premium rates
+   - Regular user accessing public rates
+
+2. **Edge Cases**
+   - Ambiguous requests (defaults to public rates)
+   - Missing information (uses "unknown" key)
+   - Mixed requests (classifies primary intent)
+
+3. **Financial Advice**
+   - Opted-in users can access advice
+   - Regular users are denied
+   - Implicit advice requests are recognized
+
+## Example Output
+
+```
+🔍 TEST CASE: Ambiguous rate request
+👤 User: regular_user_1
+💭 Request: "Show me the rates for Hilton"
+
+📋 Classification: {
+  "resourceType": "HotelType",
+  "resourceKey": "Hilton",
+  "attributes": {
+    "rateType": "public"
+  }
+}
+
+🎯 Result: ALLOWED ✅
+```
+
+## Key Features
+
+1. **Generic Classification**
+   - No hardcoded rules or patterns
+   - OpenAI understands context and intent
+   - Handles ambiguous and implicit requests
+
+2. **Flexible Access Patterns**
+   - Complex attribute matching (hotel rates)
+   - Simple opt-in validation (financial advice)
+   - Easily extensible to new use cases
+
+3. **Natural Language Understanding**
+   - Users can request access naturally
+   - System infers missing details
+   - Handles various request formats
 
 ## License
 
