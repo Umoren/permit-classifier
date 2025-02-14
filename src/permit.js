@@ -21,24 +21,40 @@ async function checkAccess(userId, parsedRequest) {
         // Add attributes only if they exist
         if (Object.keys(parsedRequest.attributes || {}).length > 0) {
             resource.attributes = parsedRequest.attributes;
-
-            // Log attributes if present
             console.log('📋 Attributes:', parsedRequest.attributes);
         }
 
-        const permitted = await permit.check(
-            userId,
-            parsedRequest.action,
-            resource
-        );
+        try {
+            const permitted = await permit.check(
+                userId,
+                parsedRequest.action,
+                resource
+            );
 
-        if (permitted) {
-            console.log('✅ Access Granted');
-        } else {
-            console.log('❌ Access Denied');
+            if (permitted) {
+                console.log('✅ Access Granted');
+            } else {
+                // Log specific denial reason
+                if (parsedRequest.resourceType === 'HotelType') {
+                    console.log('❌ Access Denied - Insufficient rate type permissions');
+                } else if (parsedRequest.resourceType === 'FinancialAdvice') {
+                    console.log('❌ Access Denied - User not authorized for financial advice');
+                } else {
+                    console.log('❌ Access Denied - Insufficient permissions');
+                }
+            }
+
+            return permitted;
+        } catch (checkError) {
+            if (checkError.message.includes('role')) {
+                console.error('❌ Role-based permission check failed:', checkError.message);
+            } else if (checkError.message.includes('attribute')) {
+                console.error('❌ Attribute-based permission check failed:', checkError.message);
+            } else {
+                console.error('❌ Permission check failed:', checkError.message);
+            }
+            throw checkError;
         }
-
-        return permitted;
     } catch (err) {
         console.error("❌ Permission check failed:", err);
         throw err;

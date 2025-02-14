@@ -1,35 +1,48 @@
 const OpenAI = require('openai');
 require('dotenv').config();
 
+
 class AccessClassifier {
-    constructor() {
+    constructor(resourceType = null, attributes = []) {
         this.openai = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY
         });
 
-        this.systemPrompt = `You are an access classifier that understands user requests and their intent.
-Analyze requests and identify:
-1. What type of resource they're trying to access
-2. Any relevant attributes about the resource
-3. The intended action (usually "read")
+        this.resourceType = resourceType;
+        this.attributes = attributes;
+        this.systemPrompt = this.buildSystemPrompt();
+    }
 
-Key patterns to recognize:
-- Requests about hotel rates/prices -> resourceType: "HotelType"
-  - Default to "public" rate if no specific rate type mentioned
-  - Use "unknown" as resourceKey if hotel not specified
-- Requests for financial/investment guidance -> resourceType: "FinancialAdvice"
-  - Extract specific topic (investments, retirement, etc.) as resourceKey
-- For ambiguous requests that might reference multiple services, prioritize the main intent
-
-Return JSON format:
-{
-    "resourceType": "HotelType | FinancialAdvice",
+    buildSystemPrompt() {
+        let prompt = `You are a request classifier that understands user intent.
+ 
+ ${this.resourceType ? `Classify requests for resource type: ${this.resourceType}` : 'Determine appropriate resource type'}
+ 
+ ${this.attributes.length ? `Look for these attributes: ${this.attributes.join(', ')}` : ''}
+ 
+ Key rules:
+ - For HotelType requests, only use rateType values: "IATA", "premium", or "public"
+ - For financial requests:
+  * Use FinancialAdvice when user seeks recommendations, guidance, or strategy
+  * Use FinancialData when user wants current values, stats, or status
+ 
+ Examples:
+ "Show me IATA rates" -> HotelType with rateType: "IATA"
+ "What's the price?" -> HotelType with rateType: "public"
+ "How should I invest?" -> FinancialAdvice
+ "Show my portfolio value" -> FinancialData
+ 
+ Return JSON:
+ {
+    "resourceType": "${this.resourceType || 'determined by intent'}",
     "resourceKey": "identifier",
     "attributes": {
-        "rateType": "IATA | premium | public"  // for HotelType only
+        ${this.attributes.map(attr => `"${attr}": "determined value"`).join(',\n        ')}
     },
     "action": "read"
-}`;
+ }`;
+
+        return prompt;
     }
 
     async classify(userPrompt) {
@@ -58,3 +71,5 @@ Return JSON format:
 }
 
 module.exports = AccessClassifier;
+
+

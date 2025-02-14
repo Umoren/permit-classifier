@@ -2,7 +2,9 @@ require('dotenv').config();
 const AccessClassifier = require('./src/classifier');
 const { checkAccess } = require('./src/permit');
 
-const classifier = new AccessClassifier();
+// Initialize our classifiers
+const hotelClassifier = new AccessClassifier('HotelType', ['rateType']);
+const financeClassifier = new AccessClassifier('FinancialAdvice');
 
 async function testScenario(scenario) {
     console.log('\n' + '='.repeat(50));
@@ -11,7 +13,11 @@ async function testScenario(scenario) {
     console.log(`💭 Request: "${scenario.prompt}"`);
 
     try {
-        const classification = await classifier.classify(scenario.prompt);
+        // Choose classifier based on scenario type
+        const classification = await (scenario.type === 'finance'
+            ? financeClassifier.classify(scenario.prompt)
+            : hotelClassifier.classify(scenario.prompt));
+
         console.log('\n📋 Classification:', JSON.stringify(classification, null, 2));
 
         const isAllowed = await checkAccess(scenario.userId, classification);
@@ -27,8 +33,9 @@ async function testScenario(scenario) {
 
 async function runTests() {
     const scenarios = [
-        // Basic cases
+        // Hotel rate scenarios - Mix of allowed and denied
         {
+            type: 'hotel',
             description: "IATA agent accessing IATA rates",
             userId: 'iata_agent_1',
             prompt: "Give me the IATA rate for Hilton Budapest tonight",
@@ -36,13 +43,15 @@ async function runTests() {
             expected: "Should be allowed (IATA member requesting IATA rates)"
         },
         {
-            description: "Premium user accessing premium rates",
-            userId: 'premium_user_1',
-            prompt: "Can I see the premium rates for Marriott London?",
-            shouldBeAllowed: true,
-            expected: "Should be allowed (Premium user requesting premium rates)"
+            type: 'hotel',
+            description: "Regular user attempting IATA rates",
+            userId: 'regular_user_1',
+            prompt: "Show me IATA rates for Marriott",
+            shouldBeAllowed: false,
+            expected: "Should be denied (No IATA membership)"
         },
         {
+            type: 'hotel',
             description: "Regular user accessing public rates",
             userId: 'regular_user_1',
             prompt: "What's the price for Hyatt New York?",
@@ -50,52 +59,46 @@ async function runTests() {
             expected: "Should be allowed (Public rates accessible to all)"
         },
 
-        // Edge cases
+        // Finance scenarios - Testing intent recognition
         {
-            description: "Ambiguous rate request",
+            type: 'finance',
+            description: "Regular user requesting portfolio data",
             userId: 'regular_user_1',
-            prompt: "Show me the rates for Hilton",
+            prompt: "Show me my portfolio stats",
             shouldBeAllowed: true,
-            expected: "Should be allowed (Defaults to public rates)"
+            expected: "Should be allowed (Basic data access)"
         },
         {
-            description: "Missing hotel name",
+            type: 'finance',
+            description: "Regular user requesting advice",
             userId: 'regular_user_1',
-            prompt: "What's the cheapest rate available?",
-            shouldBeAllowed: true,
-            expected: "Should be allowed (Defaults to public rates)"
-        },
-
-        // Financial advice cases
-        {
-            description: "Opted-in user requesting financial advice",
-            userId: 'ai_opted_in_user',
-            prompt: "I need help planning my retirement investments",
-            shouldBeAllowed: true,
-            expected: "Should be allowed (User opted in for AI advice)"
-        },
-        {
-            description: "Implicit financial advice request",
-            userId: 'ai_opted_in_user',
-            prompt: "Help me balance my portfolio",
-            shouldBeAllowed: true,
-            expected: "Should be allowed (Recognizes as financial advice)"
-        },
-        {
-            description: "Regular user requesting financial advice",
-            userId: 'regular_user_1',
-            prompt: "What stocks should I invest in?",
+            prompt: "How should I invest?",
             shouldBeAllowed: false,
-            expected: "Should be denied (User not opted in for AI advice)"
+            expected: "Should be denied (Advice requires AI opt-in)"
         },
-
-        // Mixed/Complex cases
         {
-            description: "Mixed IATA and financial request",
-            userId: 'iata_agent_1',
-            prompt: "Show me IATA rates and help with my investments",
+            type: 'finance',
+            description: "Regular user requesting performance data",
+            userId: 'regular_user_1',
+            prompt: "What's my portfolio's current value?",
             shouldBeAllowed: true,
-            expected: "Should focus on primary intent and handle accordingly"
+            expected: "Should be allowed (Simple data retrieval)"
+        },
+        {
+            type: 'finance',
+            description: "Regular user asking for strategy advice",
+            userId: 'regular_user_1',
+            prompt: "Is my investment strategy optimal?",
+            shouldBeAllowed: false,
+            expected: "Should be denied (Advice request without opt-in)"
+        },
+        {
+            type: 'finance',
+            description: "AI user requesting investment advice",
+            userId: 'ai_opted_in_user',
+            prompt: "How should I rebalance my portfolio?",
+            shouldBeAllowed: true,
+            expected: "Should be allowed (Opted-in user requesting advice)"
         }
     ];
 
